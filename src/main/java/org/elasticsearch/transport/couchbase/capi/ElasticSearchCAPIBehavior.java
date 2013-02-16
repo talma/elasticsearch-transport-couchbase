@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import org.codehaus.jackson.map.ObjectMapper;
 import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequestBuilder;
@@ -32,6 +33,7 @@ import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.delete.DeleteRequest;
 import org.elasticsearch.action.get.GetResponse;
 import org.elasticsearch.action.get.MultiGetItemResponse;
+import org.elasticsearch.action.get.MultiGetRequestBuilder;
 import org.elasticsearch.action.get.MultiGetResponse;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.index.IndexRequestBuilder;
@@ -50,16 +52,17 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
 
     protected String defaultDocumentType;
     protected String checkpointDocumentType;
-    protected String dynamicTypePath;
     protected boolean resolveConflicts;
 
-    public ElasticSearchCAPIBehavior(Client client, ESLogger logger, String defaultDocumentType, String checkpointDocumentType, String dynamicTypePath, boolean resolveConflicts) {
+    protected Map<String, Pattern> documentTypePatterns;
+
+    public ElasticSearchCAPIBehavior(Client client, ESLogger logger, String defaultDocumentType, String checkpointDocumentType, boolean resolveConflicts, Map<String, Pattern> documentTypePatterns) {
         this.client = client;
         this.logger = logger;
         this.defaultDocumentType = defaultDocumentType;
         this.checkpointDocumentType = checkpointDocumentType;
-        this.dynamicTypePath = dynamicTypePath;
         this.resolveConflicts = resolveConflicts;
+        this.documentTypePatterns = documentTypePatterns;
     }
 
     @Override
@@ -120,7 +123,13 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
         // about revisions we already have
         if (resolveConflicts) {
             String index = getElasticSearchIndexNameFromDatabase(database);
-            MultiGetResponse response = client.prepareMultiGet().add(index, defaultDocumentType, responseMap.keySet()).execute().actionGet();
+            MultiGetRequestBuilder requestBuilder = client.prepareMultiGet();
+            for(String id : responseMap.keySet()) {
+                String type = getDocumentTypeFromId(id);
+                requestBuilder.add(index, type, id);
+            }
+
+            MultiGetResponse response = requestBuilder.execute().actionGet();
             if(response != null) {
                 Iterator<MultiGetItemResponse> iterator = response.iterator();
                 while(iterator.hasNext()) {
@@ -220,6 +229,8 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
             String type = defaultDocumentType;
             if(id.startsWith("_local/")) {
                 type = checkpointDocumentType;
+            } else {
+                type = getDocumentTypeFromId(id);
             }
             boolean deleted = meta.containsKey("deleted") ? (Boolean)meta.get("deleted") : false;
 
@@ -260,7 +271,8 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
 
     @Override
     public Map<String, Object> getDocument(String database, String docId) {
-        return getDocumentElasticSearch(getElasticSearchIndexNameFromDatabase(database), docId, defaultDocumentType);
+        String type = getDocumentTypeFromId(docId);
+        return getDocumentElasticSearch(getElasticSearchIndexNameFromDatabase(database), docId, type);
     }
 
     @Override
@@ -279,7 +291,8 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
 
     @Override
     public String storeDocument(String database, String docId, Map<String, Object> document) {
-        return storeDocumentElasticSearch(getElasticSearchIndexNameFromDatabase(database), docId, document, defaultDocumentType);
+        String type = getDocumentTypeFromId(docId);
+        return storeDocumentElasticSearch(getElasticSearchIndexNameFromDatabase(database), docId, document, type);
     }
 
     @Override
@@ -349,5 +362,14 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
             return database.substring(0, semicolonIndex);
         }
         return database;
+    }
+
+    protected String getDocumentTypeFromId(String id) {
+        for(Entry<String,Pattern> typePattern : documentTypePatterns.entrySet()) {
+            if(typePattern.getValue().matcher(id).matches()) {
+                return typePattern.getKey();
+            }
+        }
+        return defaultDocumentType;
     }
 }

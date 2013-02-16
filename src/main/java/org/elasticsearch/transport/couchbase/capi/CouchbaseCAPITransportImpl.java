@@ -16,7 +16,10 @@ package org.elasticsearch.transport.couchbase.capi;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Pattern;
 
 import org.elasticsearch.ElasticSearchException;
 import org.elasticsearch.client.Client;
@@ -63,9 +66,12 @@ public class CouchbaseCAPITransportImpl extends AbstractLifecycleComponent<Couch
 
     private String defaultDocumentType;
     private String checkpointDocumentType;
-    private String dynamicTypePath;
 
     private final int numVbuckets;
+
+    private Map<String,String> documentTypePatternStrings;
+    private Map<String, Pattern> documentTypePatterns;
+
 
     @Inject
     public CouchbaseCAPITransportImpl(Settings settings, RestController restController, NetworkService networkService, IndicesService indicesService, MetaDataMappingService metaDataMappingService, Client client) {
@@ -81,8 +87,15 @@ public class CouchbaseCAPITransportImpl extends AbstractLifecycleComponent<Couch
         this.password = settings.get("couchbase.password", "");
         this.defaultDocumentType = settings.get("couchbase.defaultDocumentType", DEFAULT_DOCUMENT_TYPE_DOCUMENT);
         this.checkpointDocumentType = settings.get("couchbase.checkpointDocumentType", DEFAULT_DOCUMENT_TYPE_CHECKPOINT);
-        this.dynamicTypePath = settings.get("couchbase.dynamicTypePath");
         this.resolveConflicts = settings.getAsBoolean("couchbase.resolveConflicts", true);
+
+        this.documentTypePatterns = new HashMap<String,Pattern>();
+        this.documentTypePatternStrings = settings.getByPrefix("couchbase.documentTypes.").getAsMap();
+        for (String key : documentTypePatternStrings.keySet()) {
+            String pattern = documentTypePatternStrings.get(key);
+            logger.info("See document type: {} with pattern: {} compiling...", key, pattern);
+            documentTypePatterns.put(key, Pattern.compile(pattern));
+        }
 
         int defaultNumVbuckets = 1024;
         if(System.getProperty("os.name").toLowerCase().contains("mac")) {
@@ -115,7 +128,7 @@ public class CouchbaseCAPITransportImpl extends AbstractLifecycleComponent<Couch
         final InetAddress publishAddressHost = publishAddressHostX;
 
 
-        capiBehavior = new ElasticSearchCAPIBehavior(client, logger, defaultDocumentType, checkpointDocumentType, dynamicTypePath, resolveConflicts.booleanValue());
+        capiBehavior = new ElasticSearchCAPIBehavior(client, logger, defaultDocumentType, checkpointDocumentType, resolveConflicts.booleanValue(), documentTypePatterns);
         couchbaseBehavior = new ElasticSearchCouchbaseBehavior(client);
 
         PortsRange portsRange = new PortsRange(port);
