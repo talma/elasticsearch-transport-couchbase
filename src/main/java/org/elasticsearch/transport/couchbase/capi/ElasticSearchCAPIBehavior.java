@@ -55,14 +55,19 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
     protected boolean resolveConflicts;
 
     protected Map<String, Pattern> documentTypePatterns;
+    protected Map<String, String> documentTypeParentFields;
+    protected Map<String, String> documentTypeRoutingFields;
 
-    public ElasticSearchCAPIBehavior(Client client, ESLogger logger, String defaultDocumentType, String checkpointDocumentType, boolean resolveConflicts, Map<String, Pattern> documentTypePatterns) {
+    public ElasticSearchCAPIBehavior(Client client, ESLogger logger, String defaultDocumentType, String checkpointDocumentType, boolean resolveConflicts,
+            Map<String, Pattern> documentTypePatterns, Map<String, String> documentTypeParentFields, Map<String, String> documentTypeRoutingFields) {
         this.client = client;
         this.logger = logger;
         this.defaultDocumentType = defaultDocumentType;
         this.checkpointDocumentType = checkpointDocumentType;
         this.resolveConflicts = resolveConflicts;
         this.documentTypePatterns = documentTypePatterns;
+        this.documentTypeParentFields = documentTypeParentFields;
+        this.documentTypeRoutingFields = documentTypeRoutingFields;
     }
 
     @Override
@@ -226,11 +231,19 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
             }
 
 
+            String parentField = null;
+            String routingField = null;
             String type = defaultDocumentType;
             if(id.startsWith("_local/")) {
                 type = checkpointDocumentType;
             } else {
                 type = getDocumentTypeFromId(id);
+                if(documentTypeParentFields.containsKey(type)) {
+                    parentField = documentTypeParentFields.get(type);
+                }
+                if(documentTypeRoutingFields.containsKey(type)) {
+                    routingField = documentTypeRoutingFields.get(type);
+                }
             }
             boolean deleted = meta.containsKey("deleted") ? (Boolean)meta.get("deleted") : false;
 
@@ -242,6 +255,17 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
                 indexBuilder.setSource(toBeIndexed);
                 if(ttl > 0) {
                     indexBuilder.setTTL(ttl);
+                }
+                if(parentField != null) {
+                    // evaluate the parentField
+                    Object parent = JSONMapPath(toBeIndexed, parentField);
+                    Object routing = JSONMapPath(toBeIndexed, routingField);
+                    if (parent != null && parent instanceof String && routing != null && routing instanceof String) {
+                        indexBuilder.setParent((String)parent);
+                        indexBuilder.setRouting((String)routing);
+                    } else {
+                        logger.warn("Unabled to determine parent and/or routing value from parent field {} routing field {} for doc id {}", parentField, routingField, id);
+                    }
                 }
                 IndexRequest indexRequest = indexBuilder.request();
                 bulkBuilder.add(indexRequest);
@@ -371,5 +395,25 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
             }
         }
         return defaultDocumentType;
+    }
+
+    public Object JSONMapPath(Map<String, Object> json, String path) {
+        int dotIndex = path.indexOf('.');
+        if (dotIndex >= 0) {
+            String pathThisLevel = path.substring(0,dotIndex);
+            Object current = json.get(pathThisLevel);
+            String pathRest = path.substring(dotIndex+1);
+            if (pathRest.length() == 0) {
+                return current;
+            }
+            else if(current instanceof Map && pathRest.length() > 0) {
+                return JSONMapPath((Map<String, Object>)current, pathRest);
+            }
+        } else {
+            // no dot
+            Object current = json.get(path);
+            return current;
+        }
+        return null;
     }
 }

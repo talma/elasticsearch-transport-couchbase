@@ -71,6 +71,8 @@ public class CouchbaseCAPITransportImpl extends AbstractLifecycleComponent<Couch
 
     private Map<String,String> documentTypePatternStrings;
     private Map<String, Pattern> documentTypePatterns;
+    private Map<String, String> documentTypeParentFields;
+    private Map<String, String> documentTypeRoutingFields;
 
 
     @Inject
@@ -95,6 +97,18 @@ public class CouchbaseCAPITransportImpl extends AbstractLifecycleComponent<Couch
             String pattern = documentTypePatternStrings.get(key);
             logger.info("See document type: {} with pattern: {} compiling...", key, pattern);
             documentTypePatterns.put(key, Pattern.compile(pattern));
+        }
+
+        this.documentTypeParentFields = settings.getByPrefix("couchbase.documentTypeParentFields.").getAsMap();
+        for (String key: documentTypeParentFields.keySet()) {
+            String parentField = documentTypeParentFields.get(key);
+            logger.info("Using field {} as parent for type {}", parentField, key);
+        }
+
+        this.documentTypeRoutingFields = settings.getByPrefix("couchbase.documentTypeRoutingFields.").getAsMap();
+        for (String key: documentTypeRoutingFields.keySet()) {
+            String routingField = documentTypeRoutingFields.get(key);
+            logger.info("Using field {} as routing for type {}", routingField, key);
         }
 
         int defaultNumVbuckets = 1024;
@@ -128,7 +142,7 @@ public class CouchbaseCAPITransportImpl extends AbstractLifecycleComponent<Couch
         final InetAddress publishAddressHost = publishAddressHostX;
 
 
-        capiBehavior = new ElasticSearchCAPIBehavior(client, logger, defaultDocumentType, checkpointDocumentType, resolveConflicts.booleanValue(), documentTypePatterns);
+        capiBehavior = new ElasticSearchCAPIBehavior(client, logger, defaultDocumentType, checkpointDocumentType, resolveConflicts.booleanValue(), documentTypePatterns, documentTypeParentFields, documentTypeRoutingFields);
         couchbaseBehavior = new ElasticSearchCouchbaseBehavior(client);
 
         PortsRange portsRange = new PortsRange(port);
