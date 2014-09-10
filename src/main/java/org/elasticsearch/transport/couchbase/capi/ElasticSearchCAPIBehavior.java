@@ -254,11 +254,12 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
         activeBulkDocsRequests.inc();
         String index = getElasticSearchIndexNameFromDatabase(database);
 
-
-        BulkRequestBuilder bulkBuilder = client.prepareBulk();
-
         // keep a map of the id - rev for building the response
         Map<String,String> revisions = new HashMap<String, String>();
+
+        // put requests into this map, not directly into the bulk request
+        Map<String,IndexRequest> bulkIndexRequests = new HashMap<String,IndexRequest>();
+        Map<String,DeleteRequest> bulkDeleteRequests = new HashMap<String,DeleteRequest>();
 
         logger.debug("Bulk doc entry is {}", docs);
         for (Map<String, Object> doc : docs) {
@@ -322,7 +323,7 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
 
             if(deleted) {
                 DeleteRequest deleteRequest = client.prepareDelete(index, type, id).request();
-                bulkBuilder.add(deleteRequest);
+                bulkDeleteRequests.put(id, deleteRequest);
             } else {
                 IndexRequestBuilder indexBuilder = client.prepareIndex(index, type, id);
                 indexBuilder.setSource(toBeIndexed);
@@ -330,7 +331,7 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
                     indexBuilder.setTTL(ttl);
                 }
                 IndexRequest indexRequest = indexBuilder.request();
-                bulkBuilder.add(indexRequest);
+                bulkIndexRequests.put(id,  indexRequest);
             }
         }
 
@@ -341,6 +342,15 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
 
         BulkResponse response = null;
         do {
+            // build the bulk request for this iteration
+            BulkRequestBuilder bulkBuilder = client.prepareBulk();
+            for (Entry<String,IndexRequest> entry : bulkIndexRequests.entrySet()) {
+                bulkBuilder.add(entry.getValue());
+            }
+            for (Entry<String,DeleteRequest> entry : bulkDeleteRequests.entrySet()) {
+                bulkBuilder.add(entry.getValue());
+            }
+
             attempt++;
             result = new ArrayList<Object>();
             if(response != null) {
@@ -361,6 +371,11 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
                         itemResponse.put("id", itemId);
                         itemResponse.put("rev", itemRev);
                         result.add(itemResponse);
+
+                        // remove the item from the bulk requests list
+                        // so we don't try to index it again
+                        bulkIndexRequests.remove(itemId);
+                        bulkDeleteRequests.remove(itemId);
                     } else {
                         Failure failure = bulkItemResponse.getFailure();
                         // if the error is fatal don't retry
