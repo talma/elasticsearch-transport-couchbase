@@ -9,15 +9,14 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 public class RegexKeyFilter implements KeyFilter {
-
     protected ESLogger logger = Loggers.getLogger(getClass());
-    private String keyFilterType;
     private Map<String,String> keyFilterPatternStrings;
     private Map<String, Pattern> keyFilterPatterns;
+    private AllowDocumentFilter allowDocumentFilter;
 
     @Override
     public void configure(Settings settings) {
-        this.keyFilterType = settings.get("couchbase.keyFilterType", DefaultKeyFilter.DEFAULT_KEY_FILTER_TYPE);
+        String keyFilterType = settings.get("couchbase.keyFilterType", DefaultKeyFilter.DEFAULT_KEY_FILTER_TYPE);
         logger.trace("Using key filter type: {}", keyFilterType);
         this.keyFilterPatterns = new HashMap<String,Pattern>();
         this.keyFilterPatternStrings = settings.getByPrefix("couchbase.keyFilters.").getAsMap();
@@ -26,16 +25,27 @@ public class RegexKeyFilter implements KeyFilter {
             logger.trace("See key filter: {} with pattern: {} compiling...", key, pattern);
             keyFilterPatterns.put(key, Pattern.compile(pattern));
         }
-    }
+        if(keyFilterType.toLowerCase().equals("include")) {
+            allowDocumentFilter = new AllowDocumentFilter() {
+                @Override
+                public boolean allow(String index, String docId) {
+                    return  matchesAnyFilter(index, docId);
+                }
+            };
+        } else {
+            allowDocumentFilter = new AllowDocumentFilter() {
+                @Override
+                public boolean allow(String index, String docId) {
+                    return !matchesAnyFilter(index, docId);
+                }
+            };
+        }
 
+    }
 
     @Override
     public Boolean shouldAllow(String index, String docId) {
-        Boolean matches = matchesAnyFilter(index, docId);
-        if(keyFilterType.toLowerCase().equals("include"))
-            return matches;
-        else
-            return !matches;
+        return allowDocumentFilter.allow(index,docId);
     }
 
     private Boolean matchesAnyFilter(String index, String docId) {
@@ -46,5 +56,9 @@ public class RegexKeyFilter implements KeyFilter {
         }
 
         return include;
+    }
+
+    private static interface AllowDocumentFilter {
+        boolean allow(String index, String docId);
     }
 }

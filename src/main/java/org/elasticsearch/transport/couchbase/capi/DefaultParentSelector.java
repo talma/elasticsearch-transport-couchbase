@@ -23,6 +23,7 @@ public class DefaultParentSelector implements IParentSelector {
         this.documentTypeParentFields = settings.getByPrefix("couchbase.documentTypeParentFields.").getAsMap();
         if (documentTypeParentFields.isEmpty()) {
             documentTypeParentFields = null;
+            return;
         }
         for (String key: documentTypeParentFields.keySet()) {
             String parentField = documentTypeParentFields.get(key);

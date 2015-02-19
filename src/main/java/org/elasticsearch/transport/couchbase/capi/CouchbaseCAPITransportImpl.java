@@ -86,7 +86,7 @@ public class CouchbaseCAPITransportImpl extends AbstractLifecycleComponent<Couch
     private KeyFilter keyFilter;
 
     private Map<String, String> documentTypeRoutingFields;
-    
+
     private List<String> ignoreDeletes;
 
     @Inject
@@ -150,7 +150,7 @@ public class CouchbaseCAPITransportImpl extends AbstractLifecycleComponent<Couch
             String routingField = documentTypeRoutingFields.get(key);
             logger.info("Using field {} as routing for type {}", routingField, key);
         }
-        
+
         this.ignoreDeletes = new ArrayList<String>(Arrays.asList(settings.get("couchbase.ignore.delete","").split(":")));
         logger.info("Couchbase transport will ignore delete operations for this buckets: {}", ignoreDeletes);
 
