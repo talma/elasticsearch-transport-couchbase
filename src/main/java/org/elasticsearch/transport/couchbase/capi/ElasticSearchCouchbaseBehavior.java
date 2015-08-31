@@ -166,7 +166,7 @@ public class ElasticSearchCouchbaseBehavior implements CouchbaseBehavior {
         // first look for bucket UUID in cache
         String bucketUUID = this.bucketUUIDCache.getIfPresent(bucket);
         if (bucketUUID != null) {
-            logger.debug("found bucket UUID in cache");
+            logger.debug("found bucket UUID {} in cache", bucketUUID);
             return bucketUUID;
         }
 

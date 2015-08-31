@@ -9,6 +9,7 @@ import java.util.Map;
 
 /**
  * Get parent document Id according to field within document json
+ *
  * @author tal.maayani on 1/22/2015.
  */
 public class DefaultParentSelector implements IParentSelector {
@@ -25,7 +26,7 @@ public class DefaultParentSelector implements IParentSelector {
             documentTypeParentFields = null;
             return;
         }
-        for (String key: documentTypeParentFields.keySet()) {
+        for (String key : documentTypeParentFields.keySet()) {
             String parentField = documentTypeParentFields.get(key);
             logger.info("Using field {} as parent for type {}", parentField, key);
         }
@@ -33,14 +34,31 @@ public class DefaultParentSelector implements IParentSelector {
 
     @Override
     public Object getParent(Map<String, Object> doc, String docId, String type) {
+        if (documentTypeParentFields == null) return null;
         String parentField = null;
-        if(documentTypeParentFields != null && documentTypeParentFields.containsKey(type)) {
+        if (documentTypeParentFields.containsKey(type)) {
             parentField = documentTypeParentFields.get(type);
         }
         if (parentField == null) return null;
-        if(documentTypeParentFields != null && documentTypeParentFields.containsKey(type)) {
-            parentField = documentTypeParentFields.get(type);
+        return JSONMapPath(doc, parentField);
+    }
+
+    private Object JSONMapPath(Map<String, Object> json, String path) {
+        int dotIndex = path.indexOf('.');
+        if (dotIndex >= 0) {
+            String pathThisLevel = path.substring(0, dotIndex);
+            Object current = json.get(pathThisLevel);
+            String pathRest = path.substring(dotIndex + 1);
+            if (pathRest.length() == 0) {
+                return current;
+            } else if (current instanceof Map && pathRest.length() > 0) {
+                return JSONMapPath((Map<String, Object>) current, pathRest);
+            }
+        } else {
+            // no dot
+            Object current = json.get(path);
+            return current;
         }
-        return ElasticSearchCAPIBehavior.JSONMapPath(doc, parentField);
+        return null;
     }
 }

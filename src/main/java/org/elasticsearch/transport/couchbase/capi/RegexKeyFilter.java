@@ -10,7 +10,6 @@ import java.util.regex.Pattern;
 
 public class RegexKeyFilter implements KeyFilter {
     protected ESLogger logger = Loggers.getLogger(getClass());
-    private Map<String,String> keyFilterPatternStrings;
     private Map<String, Pattern> keyFilterPatterns;
     private AllowDocumentFilter allowDocumentFilter;
 
@@ -19,10 +18,10 @@ public class RegexKeyFilter implements KeyFilter {
         String keyFilterType = settings.get("couchbase.keyFilterType", DefaultKeyFilter.DEFAULT_KEY_FILTER_TYPE);
         logger.trace("Using key filter type: {}", keyFilterType);
         this.keyFilterPatterns = new HashMap<String,Pattern>();
-        this.keyFilterPatternStrings = settings.getByPrefix("couchbase.keyFilters.").getAsMap();
+        Map<String, String> keyFilterPatternStrings = settings.getByPrefix("couchbase.keyFilters.").getAsMap();
         for (String key : keyFilterPatternStrings.keySet()) {
             String pattern = keyFilterPatternStrings.get(key);
-            logger.trace("See key filter: {} with pattern: {} compiling...", key, pattern);
+            logger.info("See key filter: {} with pattern: {} compiling...", key, pattern);
             keyFilterPatterns.put(key, Pattern.compile(pattern));
         }
         if(keyFilterType.toLowerCase().equals("include")) {
@@ -45,7 +44,12 @@ public class RegexKeyFilter implements KeyFilter {
 
     @Override
     public Boolean shouldAllow(String index, String docId) {
-        return allowDocumentFilter.allow(index,docId);
+        try {
+            return allowDocumentFilter.allow(index, docId);
+        } catch (Throwable t) {
+            logger.error("Error in Regex key filter",t);
+            return false;
+        }
     }
 
     private Boolean matchesAnyFilter(String index, String docId) {
@@ -58,7 +62,7 @@ public class RegexKeyFilter implements KeyFilter {
         return include;
     }
 
-    private static interface AllowDocumentFilter {
+    private interface AllowDocumentFilter {
         boolean allow(String index, String docId);
     }
 }

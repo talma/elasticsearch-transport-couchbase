@@ -130,13 +130,13 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
         if(response.isExists()) {
             String uuid = getBucketUUIDFromDatabase(database);
             if(uuid != null) {
-                logger.debug("included uuid, validating");
+                logger.trace("included uuid {}, validating",uuid);
                 String actualUUID = getBucketUUID("default", index);
                 if(!uuid.equals(actualUUID)) {
                     return "uuids_dont_match";
                 }
             } else {
-                logger.debug("no uuid in database name");
+                logger.trace("no uuid in database name {}", database);
             }
             return null;
         }
@@ -175,7 +175,7 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
         // check to see if too many requests are already active
         if(activeBulkDocsRequests.count() + activeRevsDiffRequests.count() >= maxConcurrentRequests) {
             totalTooManyConcurrentRequestsErrors.inc();
-            throw new UnavailableException("Too many concurrent requests");
+            logger.debug("Too many concurrent requests {}", activeBulkDocsRequests.count() + activeRevsDiffRequests.count());
         }
 
         long start = System.currentTimeMillis();
@@ -282,7 +282,7 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
         // check to see if too many requests are already active
         if(activeBulkDocsRequests.count() + activeRevsDiffRequests.count() >= maxConcurrentRequests) {
             totalTooManyConcurrentRequestsErrors.inc();
-            throw new UnavailableException("Too many concurrent requests");
+            logger.debug("Too many concurrent requests {}",activeBulkDocsRequests.count() + activeRevsDiffRequests.count());
         }
 
         long start = System.currentTimeMillis();
@@ -306,7 +306,7 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
         //used for "mock" results in case of ignore deletes or filtered out keys
         List<Object> mockResults = new ArrayList<Object>();
 
-        logger.debug("Bulk doc entry is {}", docs);
+        logger.trace("Bulk doc entry is {}", docs);
         for (Map<String, Object> doc : docs) {
 
             // these are the top-level elements that could be in the document sent by Couchbase
@@ -469,8 +469,11 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
             attempt++;
             result = new ArrayList<Object>();
 
-            if(bulkBuilder.numberOfActions() == 0)
-                return result;
+            // DO NOT RETURN EMPTY RESULT IN CASE OF NO DOCUMENT TO INDEX SINCE THERE CAN BE MOCKED DOCUMENTS
+            if(bulkBuilder.numberOfActions() == 0) {
+                logger.debug("No operation to perform - all bulk documents are ignored or deleted.");
+                break;
+            }
 
             if(response != null) {
                 // at least second time through
@@ -536,7 +539,7 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
             throw new RuntimeException("indexing error, bulk failed after all retries");
         }
 
-        logger.debug("bulk index succeeded after {} tries", attempt);
+        logger.debug("bulk index succeeded after {} attempt(s)", attempt);
 
         long end = System.currentTimeMillis();
         meanBulkDocsRequests.inc(end - start);
@@ -545,7 +548,7 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
         // Before we return, in case of ignore delete or filtered keys
         // we want to add the "mock" confirmations for the ignored operations
         // in order to satisfy the XDCR mechanism
-        if(mockResults != null && mockResults.size() > 0){
+        if(mockResults.size() > 0){
         	result.addAll(mockResults);
         }
         return result;
@@ -683,6 +686,7 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
         stats.put("_revs_diff", revsDiffStats);
         stats.put("tooManyConcurrentRequestsErrors", totalTooManyConcurrentRequestsErrors.count());
 
+        logger.trace("Stats request {}", stats);
         return stats;
     }
 
@@ -765,18 +769,18 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
         // first look for bucket UUID in cache
         String bucketUUID = this.bucketUUIDCache.getIfPresent(bucket);
         if (bucketUUID != null) {
-            logger.debug("found bucket UUID in cache");
+            logger.debug("found bucket {} UUID {} in cache",bucket, bucketUUID);
             return bucketUUID;
         }
 
-        logger.debug("bucket UUID not in cache, looking up");
+        logger.debug("bucket {} UUID not in cache, looking up",bucket);
         IndicesExistsRequestBuilder existsBuilder = client.admin().indices().prepareExists(bucket);
         IndicesExistsResponse response = existsBuilder.execute().actionGet();
         if(response.isExists()) {
             int tries = 0;
             bucketUUID = this.lookupUUID(bucket, "bucketUUID");
             while(bucketUUID == null && tries < 100) {
-                logger.debug("bucket UUID doesn't exist yet, creaating, attempt: {}", tries+1);
+                logger.debug("bucket UUID doesn't exist yet, creating, attempt: {}", tries+1);
                 String newUUID = UUID.randomUUID().toString().replace("-", "");
                 storeUUID(bucket, "bucketUUID", newUUID);
                 bucketUUID = this.lookupUUID(bucket, "bucketUUID");
@@ -792,7 +796,7 @@ public class ElasticSearchCAPIBehavior implements CAPIBehavior {
         throw new RuntimeException("failed to find/create bucket uuid");
     }
 
-    public static Object JSONMapPath(Map<String, Object> json, String path) {
+    public Object JSONMapPath(Map<String, Object> json, String path) {
         int dotIndex = path.indexOf('.');
         if (dotIndex >= 0) {
             String pathThisLevel = path.substring(0,dotIndex);

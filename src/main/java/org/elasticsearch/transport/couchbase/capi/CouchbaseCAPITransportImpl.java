@@ -130,6 +130,7 @@ public class CouchbaseCAPITransportImpl extends AbstractLifecycleComponent<Couch
         Class<? extends KeyFilter> keyFilterClass = settings.<KeyFilter>getAsClass("couchbase.keyFilter", DefaultKeyFilter.class);
         try {
             this.keyFilter = keyFilterClass.newInstance();
+            logger.info("Using keyFilter {}..", keyFilter.getClass());
         } catch (Exception e) {
             throw new ElasticsearchException("couchbase.keyFilter", e);
         }
